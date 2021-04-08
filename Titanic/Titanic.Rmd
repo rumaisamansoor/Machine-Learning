@@ -1,0 +1,482 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+ 
+
+```{r}
+
+#----------------importing dataset-----------------#
+
+train <- read.csv("C:/Users/DELL/Downloads/train.csv")
+test <- read.csv("C:/Users/DELL/Downloads/test.csv")
+```
+
+```{r}
+#adding a new column in test df->survived
+test_survived <- data.frame(survived = rep("None", nrow(test)), test[,])
+
+#now combining the datasets into one large dataset, using rbind to
+#concatenate 2 dfs row wise.
+data <- rbind(train,test_survived)
+
+#finding the datatypes
+str(data)
+```
+
+
+```{r}
+#survived and p class have chr and int respectively, as they are
+#categorical features, i am changing their datatype as factor to 
+#assign their categorical values an integer.
+
+data$survived <-as.factor(data$survived)
+data$pclass <- as.factor(data$pclass)
+
+#
+#now lets see the distribution of data within the dfs
+table(data$survived)
+table(data$pclass)
+#survived -> it can be seen that there are more 0s in the df than 1s, 
+#it is slightly skewed
+#p-class -> skewed towards 3rd class.
+```
+
+
+
+```{r}
+#------------checking missing values------------#
+
+#lets check if the df has any duplicate rows
+data[duplicated(data)]
+#no duplicate rows found !
+
+```
+
+```{r}
+#lets see if the df has duplicated name entries
+length(unique(data$name))  #2 names are duplicated, lets explore that
+
+dup_names <- as.character(data[which(duplicated(as.character(data$name))),"name"])
+dup_names      #2 duplicate names found
+
+```
+
+```{r}
+data[which(data$name%in%dup_names),]
+
+```
+
+```{r}
+
+sapply(data, function(x) sum(is.na(x)))
+#it can be seen that there are 263 Nans in age which needs to be treated, 
+#1 fare value is missing
+
+```
+
+```{r}
+
+
+#making new imp variables   -> feature engineering
+
+#title variable is created to hold the values of Ms,Mr, master and mrs
+
+data$name<- as.character(data$name)
+Titlefunc <- function(name) {
+  
+  if (length(grep("Miss.", name)) > 0) {
+    return ("Miss.")
+  } else if (length(grep("Master.", name)) > 0) {
+    return ("Master.")
+  } else if (length(grep("Mrs.", name)) > 0) {
+    return ("Mrs.")
+  } else if (length(grep("Mr.", name)) > 0) {
+    return ("Mr.")
+  } else {
+    return ("Other")
+  }
+}
+
+#c for combining values in vector
+titles <- NULL
+for (i in 1:nrow(data)) {
+  titles <- c(titles, Titlefunc(data[i,"name"]))
+}
+
+data$title<- as.factor(titles)
+
+```
+
+```{r}
+
+library(plyr)
+library(dplyr)
+
+data$ID <- seq.int(nrow(data))
+
+#age replaced with mean of the respective title. e.g master is refered
+#for boys, filling that with avg mean of age wont make sense.
+impute.mean <- function(x) replace(x, is.na(x), mean(x, na.rm = TRUE))
+data <- ddply(data, ~ title, transform, age = impute.mean(age))
+
+sapply(data, function(x) sum(is.na(x)))  #all age NAns are removed
+
+```
+
+```{r}
+
+#for fare missing value, i will be grouping w.r.t pclass
+
+impute.mean <- function(x) replace(x, is.na(x), mean(x, na.rm = TRUE))
+data<- ddply(data, ~ pclass, transform, fare = impute.mean(fare))
+
+sapply(data, function(x) sum(is.na(x)))  #No Nans now.
+#missing fare replaced with mean of pclass fare.
+
+data <-data[order(data$ID),]  #rearranging of data in orginal format
+
+```
+
+
+---------------lets visualize it----------------
+```{r}
+library(ggplot2)
+#visualizing on training df
+train$pclass <- as.factor(train$pclass)
+train$survived <- as.factor(train$survived)
+ggplot(train, aes(x=pclass, fill=survived))+
+  geom_bar(width=0.5)+
+  xlab("pclass")+
+  ylab("count")+
+  labs(fill="Survived")
+
+
+
+```
+
+```{r}
+#lets explore survival rates w.r.t to gender
+
+#male
+head(data[which(data$sex=='male'),])      #in 5 records, none survived
+
+#female
+library(stringr)
+head(data[which(str_detect(data$name,"Miss.")),])
+head(data[which(str_detect(data$name, "Mrs.")),])
+#in 5 records, 80% survival in both cases
+
+
+```
+
+```{r}
+
+#lets visualize w.r.t titles
+ggplot(data[1:891,],aes(x=title, fill=survived))+
+  geom_bar()+
+  facet_wrap(~pclass)+
+  xlab("title")+
+  ylab("count")+
+  labs(fill="Survived")+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+```
+
+```{r}
+#lets have a look on variable distribution
+summary(data)
+```
+
+```{r}
+
+ggplot(data[1:891,] , aes(x=age, fill=survived))+
+  geom_histogram(binwidth = 10)+
+  facet_wrap(~sex)+
+  xlab("sex")+
+  ylab("count")+
+  labs(fill="Survived")+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+#similarly we can visualize each variable
+
+```
+
+```{r}
+ggplot(data[1:891,] , aes(x=sibsp, fill=survived))+
+  geom_bar()+
+  facet_wrap(~sex)+
+  xlab("siblings")+
+  ylab("count")+
+  labs(fill="Survived")+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+#maximum of 8 siblings in the df
+```
+-------------feature engineering------------
+
+```{r}
+
+#feature engineering, combining parch and siblings into 1 family size
+
+family <-c(data$sibsp+data$parch+1)
+data$family <- as.factor(family)
+
+ggplot(data[1:891,] , aes(x=family, fill=survived))+
+  geom_bar()+
+  facet_wrap(~pclass)+
+  xlab("family size")+
+  ylab("count")+
+  labs(fill="Survived")+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+```
+
+```{r}
+
+#lets explore ticket variable
+head(data$ticket)  #some start with alphabet, some with number
+
+```
+
+
+```{r}
+
+ticket_firstChar <- substring(data$ticket, 0, 1)
+unique(ticket_firstChar)
+
+```
+
+```{r}
+data$ticket_firstChar <- as.factor(ticket_firstChar)
+
+```
+
+```{r}
+
+ggplot(data[1:891,] , aes(x=ticket_firstChar, fill=survived))+
+  geom_bar()+
+  facet_wrap(~pclass)+
+  xlab("ticket")+
+  ylab("count")+
+  labs(fill="Survived")
+```
+--------lets train the model with random forest
+
+```{r}
+
+#-------------label encoding---------------
+
+data_encoded <- data
+data_encoded$ticket_firstChar<-as.numeric(as.factor(data_encoded$ticket_firstChar))
+data_encoded$embarked<-as.numeric(as.factor(data_encoded$embarked))
+data_encoded$title<-as.numeric(as.factor(data_encoded$title))
+data_encoded$pclass<-as.numeric(as.factor(data_encoded$pclass))
+
+
+```
+
+```{r}
+
+
+library(randomForest)
+
+train_1 <-data_encoded[1:891,c('pclass','title','sibsp','parch','age','family','ticket_firstChar','embarked')]
+train_1label <- as.factor(train$survived)
+
+set.seed(1234)
+model_1 <- randomForest(x=train_1 , y=train_1label, ntree = 1200)
+model_1    #using ntree=1500 keeping the small size of data in consideration
+varImpPlot(model_1)    #error 20.65
+
+
+```
+
+```{r}
+
+#checking the correlation among int features in data
+
+sapply(data_encoded, class)
+
+library(corrplot)
+library(rquery)
+source("http://www.sthda.com/upload/rquery_cormat.r")
+data_encoded$family <- as.integer(data$family)
+data_corr <- data_encoded[1:891,c('sibsp','parch','family','age','pclass','ticket_firstChar','title')]
+rquery.cormat(data_corr)
+#it can be seen family_size is highly correlated with sibsp and parch
+#title and age are related,so, choosing family and title for training 
+
+```
+
+```{r}
+
+#adding other variables: family, and title ticket first character
+train_2 <-data_encoded[1:891, c('pclass','title','family','ticket_firstChar')]
+train_2label <- as.factor(train$survived)
+
+set.seed(1234)
+model_2 <- randomForest(x=train_2, y=train_2label, ntree = 1200)
+model_2
+varImpPlot(model_2) #accuracy has increased a bit
+#title still the most imp  , error #19.08
+
+```
+
+```{r}
+
+
+#as we can see ticket_firstChar is the least imp to predict from the last
+#model, lets remove it and test the data on the remaining attributes.
+train_3 <-data_encoded[1:891, c('pclass','title','family')]
+train_3label <- as.factor(train$survived)
+
+set.seed(1234)
+model_3 <- randomForest(x=train_3,train_3label, ntree = 1200)
+model_3
+varImpPlot(model_3) #error has increased upto 2% !, proceeding with model 2
+
+
+```
+
+```{r}
+
+#--------------lets predict--------------
+test_subset <-data_encoded[892:1309, c('pclass','title','family','ticket_firstChar')]
+model_2Pred <-predict(model_2,test_subset)
+table(model_2Pred)
+
+#lets check the ratio of survived and perished
+table(train$survived)
+258/160 #predicted
+549/342 #train    =>the ratio is almost the same, that's great!
+
+
+```
+
+
+lets try optimization technique to improve accuracy
+```{r}
+
+#lets work to improve the accuracy by cross validations
+library(caret)
+
+#caret makes folds as stratified.
+#no.of folds=10, total iterations=10  => total folds =100
+cv_10 <- createMultiFolds(train_2label,k=10,times=10)
+
+```
+
+```{r}
+set.seed(34324)
+#traincontrol function to optimize training of the  model
+control_1 <-trainControl(method="repeatedcv", number=10, repeats = 10, index=cv_10)
+
+library(e1071)
+
+#training on optimization
+#tuning the model to check accuracy on different parameters
+control_train1 <-train(x=train_2,y=train_2label,method='rf',tuneLength=3,
+                  ntree=1200,trControl=control_1)
+
+control_train1
+```
+
+```{r}
+
+
+#-------------------
+#now checking on cv=5
+
+cv_5 <- createMultiFolds(train_2label,k=5,times=10)
+
+
+set.seed(34324)
+#traincontrol function to optimize training of the  model
+control_2 <-trainControl(method="repeatedcv", number=5, repeats = 10, index=cv_5)
+
+library(e1071)
+
+#training on optimization
+control_train2 <-train(x=train_2,y=train_2label,method='rf',tuneLength=3,
+                       ntree=1000,trControl=control_1)
+
+control_train2   #accuracy has increased a bit =>80.9%
+
+```
+
+
+```{r}
+#lets train third model and see if its accuracy increases
+
+cv_5 <- createMultiFolds(train_3label,k=5,times=10)
+
+
+set.seed(34324)
+#traincontrol function to optimize training of the  model
+control_3 <-trainControl(method="repeatedcv", number=5, repeats = 10, index=cv_5)
+
+library(e1071)
+
+#training on optimization
+control_train3 <-train(x=train_3,y=train_3label,method='rf',tuneLength=3,
+                       ntree=1200,trControl=control_1)
+
+control_train3          #=>accuracy has increased upto 3%
+```
+
+```{r}
+
+#optimization model prediction using model 2
+test_subset1 <-data_encoded[892:1309,c('pclass','title','family','ticket_firstChar')]
+opt1_Pred <-predict(control_train2,test_subset1)
+table(opt1_Pred)
+
+#lets check the ratio of survived and perished
+table(train$survived)
+259/159 #predicted
+549/342 #train  
+```
+
+```{r}
+test_subset2 <-data_encoded[892:1309,c('pclass','title','family')]
+opt2_Pred <-predict(control_train3,test_subset2)
+table(opt2_Pred)
+
+#lets check the ratio of survived and perished
+table(train$survived)
+255/163 #predicted
+549/342 #train                
+
+#optimzation model has a close survival-perished ratio with the training set
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
